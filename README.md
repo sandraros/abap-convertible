@@ -1,6 +1,6 @@
 # abap-convertible
 
-The ABAP class `zcl_convertible` checks whether a data object is [convertible](https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/index.htm?file=abenconvertible_glosry.htm) to another. In ABAP, the convertibility is implicitly checked when assigning a value to a variable, in case the target data object is not [compatible]() with the source data object.
+The ABAP class `zcl_convertible` checks whether a data object is [convertible](https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/index.htm?file=abenconvertible_glosry.htm) to another. In ABAP, the convertibility is implicitly checked when assigning a value to a variable, in case the target data object is not [compatible](https://help.sap.com/doc/abapdocu_latest_index_htm/latest/en-US/index.htm?file=abencompatible_glosry.htm) with the source data object.
 
 ## Why this class
 
