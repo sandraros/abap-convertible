@@ -17,6 +17,10 @@ CLASS zcl_convertible DEFINITION
       RETURNING
         VALUE(result) TYPE REF TO zcl_convertible.
 
+    "! If the target has a compatible type, the convertibility is not checked and the method doesn't fail. <p class="shorttext synchronized" lang="en"></p>
+    "!
+    "! @parameter target_rtti | <p class="shorttext synchronized" lang="en"></p>
+    "! @raising zcx_convertible | <p class="shorttext synchronized" lang="en"></p>
     METHODS check_convertible_to ABSTRACT
       IMPORTING
         target_rtti TYPE REF TO cl_abap_datadescr

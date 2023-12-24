@@ -52,6 +52,11 @@ CLASS lcl_convertible_ref DEFINITION
     METHODS check_convertible_to
         REDEFINITION.
 
+    "!
+    "! @parameter from_rtti |
+    "! @parameter to_rtti |
+    "! @parameter result | Returns an exception if it's downcast
+    "! @raising zcx_convertible |
     CLASS-METHODS is_downcast
       IMPORTING
         from_rtti     TYPE REF TO cl_abap_refdescr
@@ -167,7 +172,10 @@ CLASS lcl_convertible_ref IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD is_downcast.
-    TYPES ty_ref_to_data TYPE REF TO data.
+    TYPES ty_ref_to_data     TYPE REF TO data.
+    TYPES ty_interfaces_rtti TYPE STANDARD TABLE OF REF TO cl_abap_intfdescr WITH EMPTY KEY.
+
+    DATA from_class_rtti TYPE REF TO cl_abap_classdescr.
 
     " ASSIGNMENTS BETWEEN DATA REFERENCE VARIABLES
     "
@@ -209,6 +217,7 @@ CLASS lcl_convertible_ref IMPLEMENTATION.
       result = abap_false.
 
     ELSEIF to_rtti->type_kind = to_rtti->typekind_dref.
+      " REF TO DATA
       result = xsdbool( rtti_referenced_by_to_rtti->absolute_name <> '\TYPE=DATA' ).
 
     ELSEIF to_rtti->type_kind = to_rtti->typekind_oref.
@@ -221,17 +230,17 @@ CLASS lcl_convertible_ref IMPLEMENTATION.
       "
       "   - An upcast in object references is possible in the following cases:
       "
-      "       - If both static types are classes, the class of the target variable must be the same class or a
-      "         superclass of the source variable.
+      "       1) If both static types are classes, the class of the target variable must be the same class or a
+      "          superclass of the source variable.
       "
-      "       - If both static types are interfaces, the interface of the target variable must be the same interface
-      "         or a component interface of the source variable.
+      "       2) If both static types are interfaces, the interface of the target variable must be the same interface
+      "          or a component interface of the source variable.
       "
-      "       - If the static type of the target variable is an interface and the static type of the source variable
-      "         is a class, the class of the source variable must implement the interface of the target variable.
+      "       3) If the static type of the target variable is an interface and the static type of the source variable
+      "          is a class, the class of the source variable must implement the interface of the target variable.
       "
-      "       - If the static type of the target variable is a class and the static type of the source variable is
-      "         an interface, the class of the target variable must be the generic type or the root class object.
+      "       4) If the static type of the target variable is a class and the static type of the source variable is
+      "          an interface, the class of the target variable must be the generic type or the root class object.
       "
       " Otherwise syntax error or short dump MOVE_INTERFACE_NOT_SUPPORTED
       DATA(from_class_to_class) = |{ cl_abap_typedescr=>kind_class }{ cl_abap_typedescr=>kind_class }|.
@@ -239,74 +248,77 @@ CLASS lcl_convertible_ref IMPLEMENTATION.
       DATA(from_class_to_intf) = |{ cl_abap_typedescr=>kind_class }{ cl_abap_typedescr=>kind_intf }|.
       DATA(from_intf_to_class) = |{ cl_abap_typedescr=>kind_intf }{ cl_abap_typedescr=>kind_class }|.
 
-      CASE |{ rtti_referenced_by_to_rtti->kind }{ rtti_referenced_by_from_rtti->kind }|.
+      CASE |{ rtti_referenced_by_from_rtti->kind }{ rtti_referenced_by_to_rtti->kind }|.
         WHEN from_class_to_class.
-          DATA(from_class_rtti) = CAST cl_abap_classdescr( rtti_referenced_by_from_rtti ).
-          WHILE from_class_rtti <> rtti_referenced_by_to_rtti.
-            from_class_rtti->get_super_class_type( RECEIVING  p_descr_ref           = DATA(from_super_class_rtti)
-                                                   EXCEPTIONS super_class_not_found = 1
-                                                              OTHERS                = 2 ).
-            IF sy-subrc <> 0.
-              " No super class
-              EXIT.
+          " Performance: no need to check the super-class in case the target is REF TO OBJECT,
+          " because OBJECT is the super-class of all classes.
+          IF rtti_referenced_by_to_rtti->absolute_name <> '\CLASS=OBJECT'.
+            " Text from above rule:
+            "   1) If both static types are classes, the class of the target variable must be the same class or a
+            "      superclass of the source variable.
+            from_class_rtti = CAST cl_abap_classdescr( rtti_referenced_by_from_rtti ).
+            WHILE from_class_rtti <> rtti_referenced_by_to_rtti.
+              from_class_rtti->get_super_class_type( RECEIVING  p_descr_ref           = DATA(from_super_class_rtti)
+                                                     EXCEPTIONS super_class_not_found = 1
+                                                                OTHERS                = 2 ).
+              IF sy-subrc <> 0.
+                " No super class
+                EXIT.
+              ENDIF.
+              from_class_rtti = from_super_class_rtti.
+            ENDWHILE.
+            IF from_class_rtti <> rtti_referenced_by_to_rtti.
+              RAISE EXCEPTION TYPE zcx_convertible
+                EXPORTING textid = zcx_convertible=>move_oref_not_convertible.
             ENDIF.
-            from_class_rtti = from_super_class_rtti.
-          ENDWHILE.
-          IF from_class_rtti <> rtti_referenced_by_to_rtti.
-            RAISE EXCEPTION TYPE zcx_convertible
-              EXPORTING textid = zcx_convertible=>move_oref_not_convertible.
           ENDIF.
 
         WHEN from_intf_to_intf.
+          " Text from above rule:
+          "   2) If both static types are interfaces, the interface of the target variable must be the same interface
+          "      or a component interface of the source variable.
           DATA(from_interface_rtti) = CAST cl_abap_intfdescr( rtti_referenced_by_from_rtti ).
-          DATA(lookup_from_interface_rtti) = from_interface_rtti.
-          WHILE lookup_from_interface_rtti <> rtti_referenced_by_to_rtti.
-            from_interface_rtti->get_interface_type(
-              EXPORTING  p_name              = from_interface_rtti->interfaces[ sy-index ]-name
-              RECEIVING  p_descr_ref         = lookup_from_interface_rtti
-              EXCEPTIONS interface_not_found = 1
-                         OTHERS              = 2 ).
-            IF sy-subrc <> 0.
-              RAISE EXCEPTION TYPE zcx_convertible_no_check.
-            ENDIF.
-          ENDWHILE.
-          IF rtti_referenced_by_to_rtti <> lookup_from_interface_rtti.
+          DATA(from_interfaces_rtti) = VALUE ty_interfaces_rtti( ( from_interface_rtti ) ).
+          LOOP AT from_interfaces_rtti INTO from_interface_rtti
+               WHERE table_line <> rtti_referenced_by_to_rtti.
+            LOOP AT from_interface_rtti->interfaces REFERENCE INTO DATA(from_component_interface).
+              from_interface_rtti->get_interface_type(
+                EXPORTING  p_name              = from_component_interface->name
+                RECEIVING  p_descr_ref         = DATA(from_component_interface_rtti)
+                EXCEPTIONS interface_not_found = 1
+                           OTHERS              = 2 ).
+              IF sy-subrc <> 0.
+                RAISE EXCEPTION TYPE zcx_convertible_no_check.
+              ENDIF.
+              INSERT from_component_interface_rtti INTO TABLE from_interfaces_rtti.
+            ENDLOOP.
+          ENDLOOP.
+          IF rtti_referenced_by_to_rtti <> from_interface_rtti.
             RAISE EXCEPTION TYPE zcx_convertible
-              EXPORTING textid = zcx_convertible=>move_oref_not_convertible.
+              EXPORTING textid = zcx_convertible=>move_iref_not_convertible.
           ENDIF.
 
         WHEN from_class_to_intf.
+          " Text from above rule:
+          "   3) If the static type of the target variable is an interface and the static type of the source variable
+          "      is a class, the class of the source variable must implement the interface of the target variable.
+          from_class_rtti = CAST cl_abap_classdescr( rtti_referenced_by_from_rtti ).
+          DATA(to_interface_rtti) = CAST cl_abap_intfdescr( rtti_referenced_by_to_rtti ).
+          IF NOT line_exists( from_class_rtti->interfaces[ name = to_interface_rtti->get_relative_name( ) ] ).
+            RAISE EXCEPTION TYPE zcx_convertible
+              EXPORTING textid = zcx_convertible=>move_interface_not_supported.
+          ENDIF.
 
         WHEN from_intf_to_class.
+          " Text from above rule:
+          "   4) If the static type of the target variable is a class and the static type of the source variable is
+          "      an interface, the class of the target variable must be the generic type or the root class object.
+          result = xsdbool( rtti_referenced_by_to_rtti->absolute_name <> '\CLASS=OBJECT' ).
 
       ENDCASE.
-*    DATA(rtti_referenced_by_from_rtti) = CAST cl_abap_refdescr( from_rtti )->get_referenced_type( ).
-      DATA(subclsname) = ''.
-      DO.
-*        SELECT SINGLE clsname AS superclsname
-*        FROM seometarel
-*        WHERE refclsname = @subclsname
-*          AND reltype = ''
-*        INTO @DATA(superclsname).
-        EXIT.
-      ENDDO.
-
-*      DATA(dref_from) = VALUE ty_ref_to_data( ).
-*      CREATE DATA dref_from TYPE HANDLE from_rtti.
-*      ASSIGN dref_from->* TO FIELD-SYMBOL(<from>).
-*      DATA(dref_to) = VALUE ty_ref_to_data( ).
-*      CREATE DATA dref_to TYPE HANDLE to_rtti.
-*      ASSIGN dref_to->* TO FIELD-SYMBOL(<to>).
-*      TRY.
-*      <to> = <from>.
-*      " MOVE_OREF_NOT_CONVERTIBLE (not catchable)
-*      result = abap_true.
-*      CATCH cx_root into data(error).
-*        result = abap_false.
-*      ENDTRY.
-**      result = xsdbool( abap_false = CAST cl_abap_objectdescr( rtti_referenced_by_to_rtti )->applies_to( <from> ) ).
     ELSE.
-      result = abap_false.
+      " I guess this line cannot be reached (?)
+      RAISE EXCEPTION TYPE zcx_convertible_no_check.
     ENDIF.
   ENDMETHOD.
 ENDCLASS.
@@ -343,14 +355,14 @@ CLASS lcl_convertible_struct IMPLEMENTATION.
 
         IF target_rtti->type_kind <> source_rtti->typekind_struct2.
           RAISE EXCEPTION TYPE zcx_convertible
-            EXPORTING textid = zcx_convertible=>objects_move_not_supported.
+            EXPORTING textid = zcx_convertible=>objects_not_compatible.
         ENDIF.
 
         target_struct_rtti = CAST cl_abap_structdescr( target_rtti ).
 
         IF lines( source_struct_rtti->components ) <> lines( target_struct_rtti->components ).
           RAISE EXCEPTION TYPE zcx_convertible
-            EXPORTING textid = zcx_convertible=>objects_move_not_supported.
+            EXPORTING textid = zcx_convertible=>objects_not_compatible.
         ENDIF.
 
         DATA(target_components) = target_struct_rtti->get_components( ).
@@ -437,7 +449,13 @@ CLASS lcl_convertible_table IMPLEMENTATION.
     DATA(target_table_line_rtti) = target_table_rtti->get_table_line_type( ).
     DATA(source_table_line_rtti) = source_table_rtti->get_table_line_type( ).
     IF NOT target_table_line_rtti->applies_to_data( source_table_line_rtti ).
-      zcl_convertible=>create_by_source_rtti( source_table_line_rtti )->check_convertible_to( target_table_line_rtti ).
+      TRY.
+          zcl_convertible=>create_by_source_rtti( source_table_line_rtti )->check_convertible_to( target_table_line_rtti ).
+        CATCH zcx_convertible INTO DATA(error).
+          RAISE EXCEPTION TYPE zcx_convertible
+            EXPORTING textid   = error->objects_tables_not_compatible
+                      previous = error.
+      ENDTRY.
     ENDIF.
   ENDMETHOD.
 ENDCLASS.
