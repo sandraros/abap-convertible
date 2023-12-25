@@ -12,18 +12,35 @@ INTERFACE lih_with_component_intf.
 ENDINTERFACE.
 
 
-"! The compatibility check is done via the method APPLIES_TO_DATA of CL_ABAP_DATADESCR.
-CLASS ltc_compatible DEFINITION
+"! Used to understand what level of compatibility is checked by CL_ABAP_DATADESCR->APPLIES_TO_DATA
+"! i.e. upcast is not understood as being compatible.
+CLASS ltc_applies_to_data DEFINITION
       FOR TESTING
       DURATION SHORT
       RISK LEVEL HARMLESS.
+
   PRIVATE SECTION.
 
-    METHODS two_structures FOR TESTING RAISING cx_static_check.
-    METHODS dref_upcast FOR TESTING RAISING cx_static_check.
-    METHODS oref_upcast FOR TESTING RAISING cx_static_check.
+    METHODS comp_dref_down_up_cast FOR TESTING RAISING cx_static_check.
+    METHODS d_and_t FOR TESTING RAISING cx_static_check.
+    METHODS dref_down_up_cast FOR TESTING RAISING cx_static_check.
+    METHODS itab_key FOR TESTING RAISING cx_static_check.
+    METHODS itab_key_category FOR TESTING RAISING cx_static_check.
+    METHODS oref_down_up_cast FOR TESTING RAISING cx_static_check.
+    METHODS struct FOR TESTING RAISING cx_static_check.
+    METHODS struct_component_names FOR TESTING RAISING cx_static_check.
+    METHODS struct_extra_components FOR TESTING RAISING cx_static_check.
+    METHODS struct_flat_char FOR TESTING RAISING cx_static_check.
+    METHODS struct_length FOR TESTING RAISING cx_static_check.
+    METHODS struct_type FOR TESTING RAISING cx_static_check.
+    METHODS struct_flat_char_and_c FOR TESTING RAISING cx_static_check.
 
     METHODS assert_compatible
+      IMPORTING
+        source TYPE any
+        target TYPE any.
+
+    METHODS assert_not_compatible
       IMPORTING
         source TYPE any
         target TYPE any.
@@ -36,11 +53,16 @@ CLASS ltc_convertible DEFINITION
       RISK LEVEL HARMLESS.
   PRIVATE SECTION.
 
+    METHODS comp_dref_upcast FOR TESTING RAISING cx_static_check.
+    METHODS dref_to_i_twice FOR TESTING RAISING cx_static_check.
     METHODS dref_upcast FOR TESTING RAISING cx_static_check.
-    METHODS oref_upcast FOR TESTING RAISING cx_static_check.
+    METHODS oref_upcast_clas_to_clas FOR TESTING RAISING cx_static_check.
     METHODS oref_upcast_clas_to_intf FOR TESTING RAISING cx_static_check.
     METHODS oref_upcast_intf_to_clas FOR TESTING RAISING cx_static_check.
+    METHODS oref_upcast_intf_to_intf FOR TESTING RAISING cx_static_check.
+    METHODS struct_dref_to_i_twice FOR TESTING RAISING cx_static_check.
     METHODS t_to_string FOR TESTING RAISING cx_static_check.
+    METHODS two_structures FOR TESTING RAISING cx_static_check.
 
     DATA ref_to_class_w_intf_w_intf TYPE REF TO lth_implements_intf_with_intf.
     DATA ref_to_intf_with_intf      TYPE REF TO lih_with_component_intf.
@@ -55,7 +77,18 @@ CLASS ltc_convertible DEFINITION
     METHODS move IMPORTING from TYPE any
                  EXPORTING to   TYPE any
                  RAISING
-                   zcx_convertible.
+                           zcx_convertible.
+ENDCLASS.
+
+
+CLASS ltc_convertible_short_dump DEFINITION
+      FOR TESTING
+      DURATION SHORT
+      RISK LEVEL HARMLESS.
+  PRIVATE SECTION.
+
+    METHODS itab_duplicate_key FOR TESTING RAISING cx_static_check.
+
 ENDCLASS.
 
 
@@ -65,7 +98,6 @@ CLASS ltc_not_compatible DEFINITION
       RISK LEVEL HARMLESS.
   PRIVATE SECTION.
 
-    METHODS d_to_t FOR TESTING RAISING cx_static_check.
     METHODS downcast FOR TESTING RAISING cx_static_check.
 
     DATA d TYPE d.
@@ -96,6 +128,7 @@ CLASS ltc_not_convertible DEFINITION
     METHODS oref_downcast_intf_to_clas FOR TESTING RAISING cx_static_check.
     METHODS oref_downcast_intf_to_intf FOR TESTING RAISING cx_static_check.
     METHODS t_to_d FOR TESTING RAISING cx_static_check.
+    METHODS test FOR TESTING RAISING cx_static_check.
 
     METHODS move IMPORTING from TYPE any
                  EXPORTING to   TYPE any.
@@ -169,82 +202,254 @@ CLASS lth_implements_intf_with_intf DEFINITION.
 ENDCLASS.
 
 
+CLASS lth_superclass DEFINITION.
+ENDCLASS.
+
+
+CLASS lth_subclass DEFINITION INHERITING FROM lth_superclass.
+ENDCLASS.
+
+
 CLASS lth_without_intf DEFINITION.
   PUBLIC SECTION.
 ENDCLASS.
 
 
-CLASS ltc_compatible IMPLEMENTATION.
+CLASS ltc_applies_to_data IMPLEMENTATION.
   METHOD assert_compatible.
-    DATA(rtti_source) = CAST cl_abap_datadescr( cl_abap_typedescr=>describe_by_data( source ) ).
     DATA(rtti_target) = CAST cl_abap_datadescr( cl_abap_typedescr=>describe_by_data( target ) ).
-    IF     rtti_source->kind = cl_abap_typedescr=>kind_ref
-       AND rtti_target->kind = cl_abap_typedescr=>kind_ref.
-      IF source IS BOUND.
-        IF rtti_source->type_kind = cl_abap_typedescr=>typekind_dref.
-          cl_abap_unit_assert=>assert_true(
-              act = CAST cl_abap_datadescr( CAST cl_abap_refdescr( rtti_target )->get_referenced_type( ) )->applies_to_data_ref(
-                                                                                                             source )
-              msg = 'asserts it is compatible, but it is actually NOT compatible' ).
-        ELSE.
-          cl_abap_unit_assert=>assert_true(
-              act = CAST cl_abap_objectdescr( CAST cl_abap_refdescr( rtti_target )->get_referenced_type( ) )->applies_to(
-                                                                                                               source )
-              msg = 'asserts it is compatible, but it is actually NOT compatible' ).
-        ENDIF.
-      ENDIF.
-    ELSE.
-      cl_abap_unit_assert=>assert_true( act = rtti_target->applies_to_data( source )
-                                        msg = 'asserts it is compatible, but it is actually NOT compatible' ).
-    ENDIF.
+    cl_abap_unit_assert=>assert_true( rtti_target->applies_to_data( source ) ).
   ENDMETHOD.
 
-  METHOD dref_upcast.
-    DATA ref_to_data      TYPE REF TO data.
-    DATA ref_to_abap_bool TYPE REF TO abap_bool.
+  METHOD assert_not_compatible.
+    DATA(rtti_target) = CAST cl_abap_datadescr( cl_abap_typedescr=>describe_by_data( target ) ).
+    cl_abap_unit_assert=>assert_false( rtti_target->applies_to_data( source ) ).
+  ENDMETHOD.
 
-    ref_to_data = REF #( 'Test' ).
-    ref_to_abap_bool = REF #( abap_true ).
+  METHOD comp_dref_down_up_cast.
+    DATA:
+      BEGIN OF struct_ref_to_data,
+        ref_to_data TYPE REF TO data,
+      END OF struct_ref_to_data.
+    DATA:
+      BEGIN OF struct_ref_to_abap_bool,
+        ref_to_abap_bool TYPE REF TO abap_bool,
+      END OF struct_ref_to_abap_bool.
+
+    assert_not_compatible( source = struct_ref_to_abap_bool
+                           target = struct_ref_to_data ).
+
+    assert_not_compatible( source = struct_ref_to_data
+                           target = struct_ref_to_abap_bool ).
+  ENDMETHOD.
+
+  METHOD d_and_t.
+    DATA d TYPE d.
+    DATA t TYPE t.
+
+    assert_not_compatible( source = d
+                           target = t ).
+
+    assert_not_compatible( source = t
+                           target = d ).
+  ENDMETHOD.
+
+  METHOD dref_down_up_cast.
+    DATA ref_to_abap_bool TYPE REF TO abap_bool.
+    DATA ref_to_data      TYPE REF TO data.
 
     assert_compatible( source = ref_to_abap_bool
+                       target = ref_to_abap_bool ).
+
+    assert_compatible( source = ref_to_data
                        target = ref_to_data ).
 
-    ref_to_data = ref_to_abap_bool.
+    assert_not_compatible( source = ref_to_abap_bool
+                           target = ref_to_data ).
+
+    assert_not_compatible( source = ref_to_data
+                           target = ref_to_abap_bool ).
   ENDMETHOD.
 
-  METHOD oref_upcast.
-    DATA ref_to_cl_abap_typedescr TYPE REF TO cl_abap_typedescr.
-    DATA ref_to_cl_abap_datadescr TYPE REF TO cl_abap_datadescr.
+  METHOD itab_key.
+    DATA itab_default_key TYPE STANDARD TABLE OF i WITH DEFAULT KEY.
+    DATA itab_empty_key   TYPE STANDARD TABLE OF i WITH EMPTY KEY.
 
-    ref_to_cl_abap_typedescr = cl_abap_typedescr=>describe_by_data( 'Test' ).
-    ref_to_cl_abap_datadescr = CAST #( cl_abap_typedescr=>describe_by_data( abap_true ) ).
-
-    assert_compatible( source = ref_to_cl_abap_datadescr
-                       target = ref_to_cl_abap_typedescr ).
-
-    ref_to_cl_abap_typedescr = ref_to_cl_abap_datadescr.
+    assert_not_compatible( source = itab_default_key
+                           target = itab_empty_key ).
   ENDMETHOD.
 
-  METHOD two_structures.
-    DATA:
-      BEGIN OF source,
-        company TYPE string,
-      END OF source.
-    DATA:
-      BEGIN OF target,
-        "! Typo on purpose
-        copany TYPE string,
-      END OF target.
+  METHOD itab_key_category.
+    DATA itab_hashed TYPE HASHED TABLE OF i WITH UNIQUE KEY table_line.
+    DATA itab_sorted TYPE SORTED TABLE OF i WITH UNIQUE KEY table_line.
 
-    assert_compatible( source = source
-                       target = target ).
+    assert_not_compatible( source = itab_hashed
+                           target = itab_sorted ).
+  ENDMETHOD.
 
-    target = source.
+  METHOD oref_down_up_cast.
+    DATA ref_to_subclass   TYPE REF TO lth_subclass.
+    DATA ref_to_superclass TYPE REF TO lth_superclass.
+    DATA ref_to_object     TYPE REF TO object.
+
+    assert_compatible( source = ref_to_subclass
+                       target = ref_to_subclass ).
+
+    assert_compatible( source = ref_to_superclass
+                       target = ref_to_superclass ).
+
+    assert_compatible( source = ref_to_object
+                       target = ref_to_object ).
+
+    assert_not_compatible( source = ref_to_subclass
+                           target = ref_to_object ).
+
+    assert_not_compatible( source = ref_to_subclass
+                           target = ref_to_superclass ).
+
+    assert_not_compatible( source = ref_to_superclass
+                           target = ref_to_subclass ).
+  ENDMETHOD.
+
+  METHOD struct.
+    DATA:
+      BEGIN OF struct_1,
+        comp TYPE c LENGTH 10,
+      END OF struct_1.
+    DATA:
+      BEGIN OF struct_2,
+        comp TYPE c LENGTH 10,
+      END OF struct_2.
+
+    assert_compatible( source = struct_1
+                       target = struct_2 ).
+
+    assert_compatible( source = struct_2
+                       target = struct_1 ).
+  ENDMETHOD.
+
+  METHOD struct_component_names.
+    DATA:
+      BEGIN OF struct_comp1,
+        comp1 TYPE c LENGTH 10,
+      END OF struct_comp1.
+    DATA:
+      BEGIN OF struct_comp2,
+        comp2 TYPE c LENGTH 10,
+      END OF struct_comp2.
+
+    assert_compatible( source = struct_comp1
+                       target = struct_comp2 ).
+
+    assert_compatible( source = struct_comp2
+                       target = struct_comp1 ).
+  ENDMETHOD.
+
+  METHOD struct_extra_components.
+    DATA:
+      BEGIN OF struct_comp1,
+        comp1 TYPE c LENGTH 10,
+      END OF struct_comp1.
+    DATA:
+      BEGIN OF struct_comp1_comp2,
+        comp1 TYPE c LENGTH 10,
+        comp2 TYPE c LENGTH 10,
+      END OF struct_comp1_comp2.
+
+    assert_not_compatible( source = struct_comp1
+                           target = struct_comp1_comp2 ).
+
+    assert_not_compatible( source = struct_comp1_comp2
+                           target = struct_comp1 ).
+  ENDMETHOD.
+
+  METHOD struct_length.
+    DATA:
+      BEGIN OF struct_10,
+        comp TYPE c LENGTH 10,
+      END OF struct_10.
+    DATA:
+      BEGIN OF struct_20,
+        comp TYPE c LENGTH 20,
+      END OF struct_20.
+
+    assert_not_compatible( source = struct_10
+                           target = struct_20 ).
+
+    assert_not_compatible( source = struct_20
+                           target = struct_10 ).
+  ENDMETHOD.
+
+  METHOD struct_type.
+    DATA:
+      BEGIN OF struct_c,
+        comp TYPE c LENGTH 10,
+      END OF struct_c.
+    DATA:
+      BEGIN OF struct_n,
+        comp TYPE n LENGTH 10,
+      END OF struct_n.
+
+    assert_not_compatible( source = struct_c
+                           target = struct_n ).
+
+    assert_not_compatible( source = struct_n
+                           target = struct_c ).
+  ENDMETHOD.
+
+  METHOD struct_flat_char.
+    DATA:
+      BEGIN OF struct_flat_char,
+        comp1 TYPE c LENGTH 10,
+        comp2 TYPE c LENGTH 20,
+      END OF struct_flat_char.
+
+    DATA(rtti_clike) = CAST cl_abap_datadescr( cl_abap_typedescr=>describe_by_name( 'CLIKE' ) ).
+    cl_abap_unit_assert=>assert_true( rtti_clike->applies_to_data( struct_flat_char ) ).
+  ENDMETHOD.
+
+  METHOD struct_flat_char_and_c.
+    DATA c TYPE c LENGTH 10.
+    DATA:
+      BEGIN OF struct_flat_char,
+        comp1 TYPE c LENGTH 10,
+        comp2 TYPE c LENGTH 20,
+      END OF struct_flat_char.
+
+    assert_not_compatible( source = struct_flat_char
+                           target = c ).
+
+    assert_not_compatible( source = c
+                           target = struct_flat_char ).
   ENDMETHOD.
 ENDCLASS.
 
 
 CLASS ltc_convertible IMPLEMENTATION.
+  METHOD comp_dref_upcast.
+    DATA:
+      BEGIN OF structure_1,
+        ref_to_data TYPE REF TO data,
+      END OF structure_1.
+    DATA:
+      BEGIN OF structure_2,
+        ref_to_abap_bool TYPE REF TO abap_bool,
+      END OF structure_2.
+
+    zcl_convertible=>move( EXPORTING from = structure_2
+                           IMPORTING to   = structure_1 ).
+
+    structure_1 = structure_2.
+  ENDMETHOD.
+
+  METHOD dref_to_i_twice.
+    data ref_to_i_1 type ref to i.
+    data ref_to_i_2 type ref to i.
+    zcl_convertible=>move( EXPORTING from = ref_to_i_2
+                           IMPORTING to   = ref_to_i_1 ).
+    ref_to_i_1 = ref_to_i_2.
+  ENDMETHOD.
+
   METHOD dref_upcast.
     ref_to_data = ref_to_abap_bool.
     zcl_convertible=>move( EXPORTING from = ref_to_abap_bool
@@ -256,7 +461,7 @@ CLASS ltc_convertible IMPLEMENTATION.
                            IMPORTING to   = to ).
   ENDMETHOD.
 
-  METHOD oref_upcast.
+  METHOD oref_upcast_clas_to_clas.
     ref_to_object = ref_to_cl_ixml.
     zcl_convertible=>move( EXPORTING from = ref_to_cl_ixml
                            IMPORTING to   = ref_to_object ).
@@ -274,10 +479,63 @@ CLASS ltc_convertible IMPLEMENTATION.
                            IMPORTING to   = ref_to_object ).
   ENDMETHOD.
 
+  METHOD oref_upcast_intf_to_intf.
+    ref_to_intf = ref_to_intf_with_intf.
+    zcl_convertible=>move( EXPORTING from = ref_to_intf_with_intf
+                           IMPORTING to   = ref_to_intf ).
+  ENDMETHOD.
+
+  METHOD struct_dref_to_i_twice.
+    DATA:
+      BEGIN OF struct_ref_to_i_ref_to_i,
+        ref_to_i_1 TYPE ref to i,
+        ref_to_i_2 TYPE ref to i,
+      END OF struct_ref_to_i_ref_to_i.
+    DATA:
+      BEGIN OF struct_ref_to_i_ref_to_data,
+        ref_to_i TYPE ref to i,
+        ref_to_data TYPE ref to data,
+      END OF struct_ref_to_i_ref_to_data.
+    zcl_convertible=>move( EXPORTING from = struct_ref_to_i_ref_to_i
+                           IMPORTING to   = struct_ref_to_i_ref_to_data ).
+    struct_ref_to_i_ref_to_data = struct_ref_to_i_ref_to_i.
+  ENDMETHOD.
+
   METHOD t_to_string.
     string = t.
     zcl_convertible=>move( EXPORTING from = t
                            IMPORTING to   = string ).
+  ENDMETHOD.
+
+  METHOD two_structures.
+    DATA:
+      BEGIN OF source,
+        company TYPE n LENGTH 5,
+      END OF source.
+    DATA:
+      BEGIN OF target,
+        "! Typo on purpose
+        copany TYPE c LENGTH 10,
+      END OF target.
+
+    zcl_convertible=>move( EXPORTING from = source
+                           IMPORTING to   = target ).
+    target = source.
+  ENDMETHOD.
+ENDCLASS.
+
+
+CLASS ltc_convertible_short_dump IMPLEMENTATION.
+  METHOD itab_duplicate_key.
+    DATA itab_non_unique TYPE SORTED TABLE OF i WITH NON-UNIQUE KEY table_line.
+    DATA itab_unique     TYPE SORTED TABLE OF i WITH UNIQUE KEY table_line.
+
+    itab_non_unique = VALUE #( ( 1 ) ( 1 ) ).
+
+    " short dump ITAB_DUPLICATE_KEY
+    IF 0 = 1.
+      itab_unique = itab_non_unique.
+    ENDIF.
   ENDMETHOD.
 ENDCLASS.
 
@@ -307,14 +565,6 @@ CLASS ltc_not_compatible IMPLEMENTATION.
     ENDIF.
   ENDMETHOD.
 
-  METHOD d_to_t.
-    IF 0 = 1.
-      cl_abap_unit_assert=>assert_false(
-          act = CAST cl_abap_datadescr( cl_abap_typedescr=>describe_by_data( t ) )->applies_to_data( d )
-          msg = 'T is not compatible with D, so APPLIES_TO_DATA should return false' ).
-    ENDIF.
-  ENDMETHOD.
-
   METHOD downcast.
     DATA ref_to_data      TYPE REF TO data.
     DATA ref_to_abap_bool TYPE REF TO abap_bool.
@@ -341,9 +591,6 @@ ENDCLASS.
 
 CLASS ltc_not_convertible IMPLEMENTATION.
   METHOD comp_dref_downcast.
-    FIELD-SYMBOLS <structure_1> TYPE any.
-    FIELD-SYMBOLS <structure_2> TYPE any.
-
     DATA:
       BEGIN OF structure_1,
         ref_to_data TYPE REF TO data,
@@ -655,6 +902,25 @@ CLASS ltc_not_convertible IMPLEMENTATION.
         cl_abap_unit_assert=>assert_true( act = xsdbool( error->textid = zcx_convertible=>move_not_supported )
                                           msg = 'MOVE_NOT_SUPPORTED is expected' ).
     ENDTRY.
+  ENDMETHOD.
+
+  METHOD test.
+    DATA:
+      BEGIN OF structure_1,
+        ref_to_data TYPE REF TO data,
+        d           TYPE d,
+      END OF structure_1.
+    DATA:
+      BEGIN OF structure_2,
+        ref_to_abap_bool TYPE REF TO abap_bool,
+        t                TYPE t,
+      END OF structure_2.
+
+    IF 0 = 1.
+      " The execution of the dynamic version of this code would lead to short dump OBJECTS_NOT_COMPATIBLE (not catchable).
+      move( EXPORTING from = structure_1
+            IMPORTING to   = structure_2 ).
+    ENDIF.
   ENDMETHOD.
 ENDCLASS.
 
