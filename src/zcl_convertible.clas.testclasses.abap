@@ -24,8 +24,11 @@ CLASS ltc_applies_to_data DEFINITION
     METHODS comp_dref_down_up_cast FOR TESTING RAISING cx_static_check.
     METHODS d_and_t FOR TESTING RAISING cx_static_check.
     METHODS dref_down_up_cast FOR TESTING RAISING cx_static_check.
-    METHODS itab_key FOR TESTING RAISING cx_static_check.
-    METHODS itab_key_category FOR TESTING RAISING cx_static_check.
+    METHODS itab_compatible_elem_line_type FOR TESTING RAISING cx_static_check.
+    METHODS itab_compatible_stru_line_type FOR TESTING RAISING cx_static_check.
+    METHODS itab_incompatible_key FOR TESTING RAISING cx_static_check.
+    METHODS itab_incompatible_key_category FOR TESTING RAISING cx_static_check.
+    METHODS itab_incompatib_stru_line_type FOR TESTING RAISING cx_static_check.
     METHODS oref_down_up_cast FOR TESTING RAISING cx_static_check.
     METHODS struct FOR TESTING RAISING cx_static_check.
     METHODS struct_component_names FOR TESTING RAISING cx_static_check.
@@ -120,15 +123,19 @@ CLASS ltc_not_convertible DEFINITION
 
     METHODS comp_dref_downcast FOR TESTING RAISING cx_static_check.
     METHODS d_to_t FOR TESTING RAISING cx_static_check.
-    METHODS deep_struct_diff_number_compon FOR TESTING RAISING cx_static_check.
-    METHODS deep_table_diff_number_compon FOR TESTING RAISING cx_static_check.
     METHODS dref_downcast FOR TESTING RAISING cx_static_check.
+    METHODS dref_to_elem FOR TESTING RAISING cx_static_check.
+    METHODS elem_to_dref FOR TESTING RAISING cx_static_check.
     METHODS oref_downcast_clas_to_clas FOR TESTING RAISING cx_static_check.
     METHODS oref_downcast_clas_to_intf FOR TESTING RAISING cx_static_check.
     METHODS oref_downcast_intf_to_clas FOR TESTING RAISING cx_static_check.
     METHODS oref_downcast_intf_to_intf FOR TESTING RAISING cx_static_check.
     METHODS t_to_d FOR TESTING RAISING cx_static_check.
-    METHODS test FOR TESTING RAISING cx_static_check.
+    METHODS struct_deep_diff_number_compon FOR TESTING RAISING cx_static_check.
+    METHODS struct_deep_incompatible FOR TESTING RAISING cx_static_check.
+    METHODS struct_to_dref FOR TESTING RAISING cx_static_check.
+    METHODS table_deep_diff_number_compon FOR TESTING RAISING cx_static_check.
+    METHODS table_to_dref FOR TESTING RAISING cx_static_check.
 
     METHODS move IMPORTING from TYPE any
                  EXPORTING to   TYPE any.
@@ -271,7 +278,23 @@ CLASS ltc_applies_to_data IMPLEMENTATION.
                            target = ref_to_abap_bool ).
   ENDMETHOD.
 
-  METHOD itab_key.
+  METHOD itab_compatible_elem_line_type.
+    DATA itab_1 TYPE STANDARD TABLE OF i WITH DEFAULT KEY.
+    DATA itab_2 TYPE STANDARD TABLE OF i WITH DEFAULT KEY.
+
+    assert_compatible( source = itab_1
+                       target = itab_2 ).
+  ENDMETHOD.
+
+  METHOD itab_compatible_stru_line_type.
+    DATA itab_1 TYPE STANDARD TABLE OF t000 WITH DEFAULT KEY.
+    DATA itab_2 TYPE STANDARD TABLE OF t000 WITH DEFAULT KEY.
+
+    assert_compatible( source = itab_1
+                       target = itab_2 ).
+  ENDMETHOD.
+
+  METHOD itab_incompatible_key.
     DATA itab_default_key TYPE STANDARD TABLE OF i WITH DEFAULT KEY.
     DATA itab_empty_key   TYPE STANDARD TABLE OF i WITH EMPTY KEY.
 
@@ -279,12 +302,20 @@ CLASS ltc_applies_to_data IMPLEMENTATION.
                            target = itab_empty_key ).
   ENDMETHOD.
 
-  METHOD itab_key_category.
+  METHOD itab_incompatible_key_category.
     DATA itab_hashed TYPE HASHED TABLE OF i WITH UNIQUE KEY table_line.
     DATA itab_sorted TYPE SORTED TABLE OF i WITH UNIQUE KEY table_line.
 
     assert_not_compatible( source = itab_hashed
                            target = itab_sorted ).
+  ENDMETHOD.
+
+  METHOD itab_incompatib_stru_line_type.
+    DATA itab_1 TYPE STANDARD TABLE OF t000 WITH DEFAULT KEY.
+    DATA itab_2 TYPE STANDARD TABLE OF t002 WITH DEFAULT KEY.
+
+    assert_not_compatible( source = itab_1
+                           target = itab_2 ).
   ENDMETHOD.
 
   METHOD oref_down_up_cast.
@@ -443,8 +474,9 @@ CLASS ltc_convertible IMPLEMENTATION.
   ENDMETHOD.
 
   METHOD dref_to_i_twice.
-    data ref_to_i_1 type ref to i.
-    data ref_to_i_2 type ref to i.
+    DATA ref_to_i_2 TYPE REF TO i.
+    DATA ref_to_i_1 TYPE REF TO i.
+
     zcl_convertible=>move( EXPORTING from = ref_to_i_2
                            IMPORTING to   = ref_to_i_1 ).
     ref_to_i_1 = ref_to_i_2.
@@ -488,14 +520,15 @@ CLASS ltc_convertible IMPLEMENTATION.
   METHOD struct_dref_to_i_twice.
     DATA:
       BEGIN OF struct_ref_to_i_ref_to_i,
-        ref_to_i_1 TYPE ref to i,
-        ref_to_i_2 TYPE ref to i,
+        ref_to_i_1 TYPE REF TO i,
+        ref_to_i_2 TYPE REF TO i,
       END OF struct_ref_to_i_ref_to_i.
     DATA:
       BEGIN OF struct_ref_to_i_ref_to_data,
-        ref_to_i TYPE ref to i,
-        ref_to_data TYPE ref to data,
+        ref_to_i    TYPE REF TO i,
+        ref_to_data TYPE REF TO data,
       END OF struct_ref_to_i_ref_to_data.
+
     zcl_convertible=>move( EXPORTING from = struct_ref_to_i_ref_to_i
                            IMPORTING to   = struct_ref_to_i_ref_to_data ).
     struct_ref_to_i_ref_to_data = struct_ref_to_i_ref_to_i.
@@ -651,92 +684,6 @@ CLASS ltc_not_convertible IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-  METHOD deep_struct_diff_number_compon.
-    DATA:
-      BEGIN OF from_struct,
-        comp1 TYPE string,
-      END OF from_struct.
-    DATA:
-      BEGIN OF to_struct,
-        comp2 TYPE string,
-        comp3 TYPE string,
-      END OF to_struct.
-
-    IF 0 = 1.
-      " The execution of the dynamic version of this code would lead to short dump OBJECTS_TABLES_NOT_COMPATIBLE (not catchable).
-      move( EXPORTING from = from_struct
-            IMPORTING to   = to_struct ).
-    ENDIF.
-    cl_abap_unit_assert=>assert_equals(
-        act = lth_abap_code=>get_message_of_syntax_check( VALUE #( ( `REPORT.                 ` )
-                                                                   ( `DATA:                   ` )
-                                                                   ( `  BEGIN OF from_struct, ` )
-                                                                   ( `    comp1 TYPE string,  ` )
-                                                                   ( `  END OF from_struct.   ` )
-                                                                   ( `DATA:                   ` )
-                                                                   ( `  BEGIN OF to_struct,   ` )
-                                                                   ( `    comp2 TYPE string,  ` )
-                                                                   ( `    comp3 TYPE string,  ` )
-                                                                   ( `  END OF to_struct.     ` )
-                                                                   ( `to_struct = from_struct.` ) ) )
-        exp = VALUE lth_abap_code=>ty_message_of_syntax_check( keyword   = 'MESSAGE'
-                                                               msgnumber = 'GXD' ) ).
-    TRY.
-        zcl_convertible=>move( EXPORTING from = from_struct
-                               IMPORTING to   = to_struct ).
-        cl_abap_unit_assert=>fail( msg = 'Does not fail but exception is expected (zcx_convertible)' ).
-      CATCH zcx_convertible INTO DATA(error).
-        cl_abap_unit_assert=>assert_true( act = xsdbool( error->textid = zcx_convertible=>objects_not_compatible )
-                                          msg = 'OBJECTS_NOT_COMPATIBLE is expected' ).
-    ENDTRY.
-  ENDMETHOD.
-
-  METHOD deep_table_diff_number_compon.
-    TYPES:
-      BEGIN OF ty_from_table_line,
-        comp1 TYPE string,
-      END OF ty_from_table_line.
-    TYPES:
-      BEGIN OF ty_to_table_line,
-        comp2 TYPE string,
-        comp3 TYPE string,
-      END OF ty_to_table_line.
-
-    DATA from_table TYPE TABLE OF ty_from_table_line.
-    DATA to_table   TYPE TABLE OF ty_to_table_line.
-
-    IF 0 = 1.
-      " The execution of the dynamic version of this code would lead to short dump OBJECTS_TABLES_NOT_COMPATIBLE (not catchable).
-      move( EXPORTING from = from_table
-            IMPORTING to   = to_table ).
-    ENDIF.
-    cl_abap_unit_assert=>assert_equals( act = lth_abap_code=>get_message_of_syntax_check(
-                                                  VALUE #( ( `REPORT.                                          ` )
-                                                           ( `TYPES:                                           ` )
-                                                           ( `  BEGIN OF ty_from_table_line,                   ` )
-                                                           ( `    comp1 TYPE string,                           ` )
-                                                           ( `  END OF ty_from_table_line.                     ` )
-                                                           ( `TYPES:                                           ` )
-                                                           ( `  BEGIN OF ty_to_table_line,                     ` )
-                                                           ( `    comp2 TYPE string,                           ` )
-                                                           ( `    comp3 TYPE string,                           ` )
-                                                           ( `  END OF ty_to_table_line.                       ` )
-                                                           ( `DATA from_table TYPE TABLE OF ty_from_table_line.` )
-                                                           ( `DATA to_table   TYPE TABLE OF ty_to_table_line.  ` )
-                                                           ( `to_table = from_table.                           ` ) ) )
-                                        exp = VALUE lth_abap_code=>ty_message_of_syntax_check( keyword   = 'MESSAGE'
-                                                                                               msgnumber = 'GXD' ) ).
-    TRY.
-        zcl_convertible=>move( EXPORTING from = from_table
-                               IMPORTING to   = to_table ).
-        cl_abap_unit_assert=>fail( msg = 'Does not fail but exception is expected (zcx_convertible)' ).
-      CATCH zcx_convertible INTO DATA(error).
-        new_variable = cl_abap_unit_assert=>assert_true(
-                           act = xsdbool( error->textid = zcx_convertible=>objects_tables_not_compatible )
-                           msg = 'OBJECTS_TABLES_NOT_COMPATIBLE is expected' ).
-    ENDTRY.
-  ENDMETHOD.
-
   METHOD dref_downcast.
     DATA ref_to_data      TYPE REF TO data.
     DATA ref_to_abap_bool TYPE REF TO abap_bool.
@@ -760,6 +707,57 @@ CLASS ltc_not_convertible IMPLEMENTATION.
       CATCH zcx_convertible INTO DATA(error).
         cl_abap_unit_assert=>assert_true( act = xsdbool( error->textid = zcx_convertible=>objects_not_compatible )
                                           msg = 'OBJECTS_NOT_COMPATIBLE is expected' ).
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD dref_to_elem.
+    DATA ref_to_data TYPE REF TO data.
+    DATA d           TYPE d.
+
+    IF 0 = 1.
+      " The execution of the dynamic version of this code would lead to short dump OBJECTS_NOT_COMPATIBLE (not catchable).
+      move( EXPORTING from = ref_to_data
+            IMPORTING to   = d ).
+    ENDIF.
+    cl_abap_unit_assert=>assert_equals(
+        act = lth_abap_code=>get_message_of_syntax_check( VALUE #( ( `REPORT.                           ` )
+                                                                   ( `DATA ref_to_data TYPE REF TO data.` )
+                                                                   ( `DATA d           TYPE d.          ` )
+                                                                   ( `ref_to_data = d.                  ` ) ) )
+        exp = VALUE lth_abap_code=>ty_message_of_syntax_check( keyword   = 'MESSAGE'
+                                                               msgnumber = 'GXD' ) ).
+    TRY.
+        zcl_convertible=>move( EXPORTING from = ref_to_data
+                               IMPORTING to   = d ).
+        cl_abap_unit_assert=>fail( msg = 'Does not fail but exception is expected (zcx_convertible)' ).
+      CATCH zcx_convertible INTO DATA(error).
+        cl_abap_unit_assert=>assert_true( act = xsdbool( error->textid = zcx_convertible=>objects_not_compatible )
+                                          msg = 'OBJECTS_NOT_COMPATIBLE is expected' ).
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD elem_to_dref.
+    DATA ref_to_data TYPE REF TO data.
+
+    IF 0 = 1.
+      " The execution of the dynamic version of this code would lead to short dump OBJECTS_MOVE_NOT_SUPPORTED (not catchable).
+      move( EXPORTING from = d
+            IMPORTING to   = ref_to_data ).
+    ENDIF.
+    cl_abap_unit_assert=>assert_equals(
+        act = lth_abap_code=>get_message_of_syntax_check( VALUE #( ( `REPORT.                           ` )
+                                                                   ( `DATA ref_to_data TYPE REF TO data.` )
+                                                                   ( `DATA d           TYPE d.          ` )
+                                                                   ( `ref_to_data = d.                  ` ) ) )
+        exp = VALUE lth_abap_code=>ty_message_of_syntax_check( keyword   = 'MESSAGE'
+                                                               msgnumber = 'GXD' ) ).
+    TRY.
+        zcl_convertible=>move( EXPORTING from = d
+                               IMPORTING to   = ref_to_data ).
+        cl_abap_unit_assert=>fail( msg = 'Does not fail but exception is expected (zcx_convertible)' ).
+      CATCH zcx_convertible INTO DATA(error).
+        cl_abap_unit_assert=>assert_true( act = xsdbool( error->textid = zcx_convertible=>objects_move_not_supported )
+                                          msg = 'OBJECTS_MOVE_NOT_SUPPORTED is expected' ).
     ENDTRY.
   ENDMETHOD.
 
@@ -881,6 +879,115 @@ CLASS ltc_not_convertible IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
+  METHOD struct_deep_diff_number_compon.
+    DATA:
+      BEGIN OF from_struct,
+        comp1 TYPE string,
+      END OF from_struct.
+    DATA:
+      BEGIN OF to_struct,
+        comp2 TYPE string,
+        comp3 TYPE string,
+      END OF to_struct.
+
+    IF 0 = 1.
+      " The execution of the dynamic version of this code would lead to short dump OBJECTS_TABLES_NOT_COMPATIBLE (not catchable).
+      move( EXPORTING from = from_struct
+            IMPORTING to   = to_struct ).
+    ENDIF.
+    cl_abap_unit_assert=>assert_equals(
+        act = lth_abap_code=>get_message_of_syntax_check( VALUE #( ( `REPORT.                 ` )
+                                                                   ( `DATA:                   ` )
+                                                                   ( `  BEGIN OF from_struct, ` )
+                                                                   ( `    comp1 TYPE string,  ` )
+                                                                   ( `  END OF from_struct.   ` )
+                                                                   ( `DATA:                   ` )
+                                                                   ( `  BEGIN OF to_struct,   ` )
+                                                                   ( `    comp2 TYPE string,  ` )
+                                                                   ( `    comp3 TYPE string,  ` )
+                                                                   ( `  END OF to_struct.     ` )
+                                                                   ( `to_struct = from_struct.` ) ) )
+        exp = VALUE lth_abap_code=>ty_message_of_syntax_check( keyword   = 'MESSAGE'
+                                                               msgnumber = 'GXD' ) ).
+    TRY.
+        zcl_convertible=>move( EXPORTING from = from_struct
+                               IMPORTING to   = to_struct ).
+        cl_abap_unit_assert=>fail( msg = 'Does not fail but exception is expected (zcx_convertible)' ).
+      CATCH zcx_convertible INTO DATA(error).
+        cl_abap_unit_assert=>assert_true( act = xsdbool( error->textid = zcx_convertible=>objects_not_compatible )
+                                          msg = 'OBJECTS_NOT_COMPATIBLE is expected' ).
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD struct_deep_incompatible.
+    DATA:
+      BEGIN OF structure_1,
+        ref_to_data TYPE REF TO data,
+        d           TYPE d,
+      END OF structure_1.
+    DATA:
+      BEGIN OF structure_2,
+        ref_to_abap_bool TYPE REF TO abap_bool,
+        t                TYPE t,
+      END OF structure_2.
+
+    IF 0 = 1.
+      " The execution of the dynamic version of this code would lead to short dump OBJECTS_NOT_COMPATIBLE (not catchable).
+      move( EXPORTING from = structure_1
+            IMPORTING to   = structure_2 ).
+    ENDIF.
+    cl_abap_unit_assert=>assert_equals(
+        act = lth_abap_code=>get_message_of_syntax_check(
+                  VALUE #( ( `REPORT.                                                 ` )
+                           ( `DATA:                                      ` )
+                           ( `  BEGIN OF structure_1,                    ` )
+                           ( `    ref_to_data TYPE REF TO data,          ` )
+                           ( `    d           TYPE d,                    ` )
+                           ( `  END OF structure_1.                      ` )
+                           ( `DATA:                                      ` )
+                           ( `  BEGIN OF structure_2,                    ` )
+                           ( `    ref_to_abap_bool TYPE REF TO abap_bool,` )
+                           ( `    t                TYPE t,               ` )
+                           ( `  END OF structure_2.                      ` )
+                           ( `structure_2 = structure_1.                 ` ) ) )
+        exp = VALUE lth_abap_code=>ty_message_of_syntax_check( keyword   = 'MESSAGE'
+                                                               msgnumber = 'GXD' ) ).
+    TRY.
+        zcl_convertible=>move( EXPORTING from = structure_1
+                               IMPORTING to   = structure_2 ).
+        cl_abap_unit_assert=>fail( msg = 'Does not fail but exception is expected (zcx_convertible)' ).
+      CATCH zcx_convertible INTO DATA(error).
+        cl_abap_unit_assert=>assert_true( act = xsdbool( error->textid = zcx_convertible=>objects_not_compatible )
+                                          msg = 'OBJECTS_NOT_COMPATIBLE is expected' ).
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD struct_to_dref.
+    DATA bapiret1    TYPE bapiret1.
+    DATA ref_to_data TYPE REF TO data.
+
+    IF 0 = 1.
+      " The execution of the dynamic version of this code would lead to short dump OBJECTS_MOVE_NOT_SUPPORTED (not catchable).
+      move( EXPORTING from = bapiret1
+            IMPORTING to   = ref_to_data ).
+    ENDIF.
+    cl_abap_unit_assert=>assert_equals(
+        act = lth_abap_code=>get_message_of_syntax_check( VALUE #( ( `REPORT.                           ` )
+                                                                   ( `DATA ref_to_data TYPE REF TO data.` )
+                                                                   ( `DATA bapiret1    TYPE bapiret1.   ` )
+                                                                   ( `ref_to_data = bapiret1.           ` ) ) )
+        exp = VALUE lth_abap_code=>ty_message_of_syntax_check( keyword   = 'MESSAGE'
+                                                               msgnumber = 'GXD' ) ).
+    TRY.
+        zcl_convertible=>move( EXPORTING from = bapiret1
+                               IMPORTING to   = ref_to_data ).
+        cl_abap_unit_assert=>fail( msg = 'Does not fail but exception is expected (zcx_convertible)' ).
+      CATCH zcx_convertible INTO DATA(error).
+        cl_abap_unit_assert=>assert_true( act = xsdbool( error->textid = zcx_convertible=>objects_move_not_supported )
+                                          msg = 'OBJECTS_MOVE_NOT_SUPPORTED is expected' ).
+    ENDTRY.
+  ENDMETHOD.
+
   METHOD t_to_d.
     IF 0 = 1.
       " The execution of the dynamic version of this code would lead to short dump MOVE_NOT_SUPPORTED (not catchable).
@@ -904,23 +1011,76 @@ CLASS ltc_not_convertible IMPLEMENTATION.
     ENDTRY.
   ENDMETHOD.
 
-  METHOD test.
-    DATA:
-      BEGIN OF structure_1,
-        ref_to_data TYPE REF TO data,
-        d           TYPE d,
-      END OF structure_1.
-    DATA:
-      BEGIN OF structure_2,
-        ref_to_abap_bool TYPE REF TO abap_bool,
-        t                TYPE t,
-      END OF structure_2.
+  METHOD table_deep_diff_number_compon.
+    TYPES:
+      BEGIN OF ty_from_table_line,
+        comp1 TYPE string,
+      END OF ty_from_table_line.
+    TYPES:
+      BEGIN OF ty_to_table_line,
+        comp2 TYPE string,
+        comp3 TYPE string,
+      END OF ty_to_table_line.
+
+    DATA from_table TYPE TABLE OF ty_from_table_line.
+    DATA to_table   TYPE TABLE OF ty_to_table_line.
 
     IF 0 = 1.
-      " The execution of the dynamic version of this code would lead to short dump OBJECTS_NOT_COMPATIBLE (not catchable).
-      move( EXPORTING from = structure_1
-            IMPORTING to   = structure_2 ).
+      " The execution of the dynamic version of this code would lead to short dump OBJECTS_TABLES_NOT_COMPATIBLE (not catchable).
+      move( EXPORTING from = from_table
+            IMPORTING to   = to_table ).
     ENDIF.
+    cl_abap_unit_assert=>assert_equals( act = lth_abap_code=>get_message_of_syntax_check(
+                                                  VALUE #( ( `REPORT.                                          ` )
+                                                           ( `TYPES:                                           ` )
+                                                           ( `  BEGIN OF ty_from_table_line,                   ` )
+                                                           ( `    comp1 TYPE string,                           ` )
+                                                           ( `  END OF ty_from_table_line.                     ` )
+                                                           ( `TYPES:                                           ` )
+                                                           ( `  BEGIN OF ty_to_table_line,                     ` )
+                                                           ( `    comp2 TYPE string,                           ` )
+                                                           ( `    comp3 TYPE string,                           ` )
+                                                           ( `  END OF ty_to_table_line.                       ` )
+                                                           ( `DATA from_table TYPE TABLE OF ty_from_table_line.` )
+                                                           ( `DATA to_table   TYPE TABLE OF ty_to_table_line.  ` )
+                                                           ( `to_table = from_table.                           ` ) ) )
+                                        exp = VALUE lth_abap_code=>ty_message_of_syntax_check( keyword   = 'MESSAGE'
+                                                                                               msgnumber = 'GXD' ) ).
+    TRY.
+        zcl_convertible=>move( EXPORTING from = from_table
+                               IMPORTING to   = to_table ).
+        cl_abap_unit_assert=>fail( msg = 'Does not fail but exception is expected (zcx_convertible)' ).
+      CATCH zcx_convertible INTO DATA(error).
+        new_variable = cl_abap_unit_assert=>assert_true(
+                           act = xsdbool( error->textid = zcx_convertible=>objects_tables_not_compatible )
+                           msg = 'OBJECTS_TABLES_NOT_COMPATIBLE is expected' ).
+    ENDTRY.
+  ENDMETHOD.
+
+  METHOD table_to_dref.
+    DATA bapirettab  TYPE bapirettab.
+    DATA ref_to_data TYPE REF TO data.
+
+    IF 0 = 1.
+      " The execution of the dynamic version of this code would lead to short dump OBJECTS_MOVE_NOT_SUPPORTED (not catchable).
+      move( EXPORTING from = bapirettab
+            IMPORTING to   = ref_to_data ).
+    ENDIF.
+    cl_abap_unit_assert=>assert_equals(
+        act = lth_abap_code=>get_message_of_syntax_check( VALUE #( ( `REPORT.                           ` )
+                                                                   ( `DATA ref_to_data TYPE REF TO data.` )
+                                                                   ( `DATA bapirettab  TYPE bapirettab. ` )
+                                                                   ( `ref_to_data = bapirettab.         ` ) ) )
+        exp = VALUE lth_abap_code=>ty_message_of_syntax_check( keyword   = 'MESSAGE'
+                                                               msgnumber = 'GXD' ) ).
+    TRY.
+        zcl_convertible=>move( EXPORTING from = bapirettab
+                               IMPORTING to   = ref_to_data ).
+        cl_abap_unit_assert=>fail( msg = 'Does not fail but exception is expected (zcx_convertible)' ).
+      CATCH zcx_convertible INTO DATA(error).
+        cl_abap_unit_assert=>assert_true( act = xsdbool( error->textid = zcx_convertible=>objects_move_not_supported )
+                                          msg = 'OBJECTS_MOVE_NOT_SUPPORTED is expected' ).
+    ENDTRY.
   ENDMETHOD.
 ENDCLASS.
 
